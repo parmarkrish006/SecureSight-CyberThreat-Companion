@@ -3,7 +3,6 @@
  * Sends data to n8n webhook → Python API: Behavior Anomaly
  * Falls back to local analysis if webhook is unreachable
  */
-import { analyzeAnomalies } from '../analysis/anomaly-engine.js';
 import { analyzeAnomalyViaWebhook } from '../api/n8n-service.js';
 import { readFileAsText, delay } from '../utils/helpers.js';
 
@@ -146,14 +145,19 @@ Example:
       result = normalizeN8nAnomalyResult(data, text);
     }
 
-    // Fallback to local analysis if webhook failed
+    // If webhook failed
     if (!result || !result.success) {
-      source = 'local';
-      for (let i = 40; i <= 80; i += 10) {
-        await delay(100);
-        progress.style.width = i + '%';
-      }
-      result = analyzeAnomalies(text);
+      progress.style.width = '100%';
+      await delay(200);
+      analyzeBtn.disabled = false;
+      analyzeBtn.innerHTML = '🔍 Analyze Logs';
+      resultsContainer.innerHTML = `
+        <div class="card">
+          <div style="color: var(--accent-orange); display: flex; align-items: center; gap: var(--space-2);">
+            <span>⚠️</span> Analysis requires the n8n cloud pipeline. The webhook did not respond or returned invalid data.
+          </div>
+        </div>`;
+      return;
     }
 
     progress.style.width = '100%';

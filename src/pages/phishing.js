@@ -3,7 +3,6 @@
  * Sends data to n8n webhook → VirusTotal HTTP Request
  * Falls back to local analysis if webhook is unreachable
  */
-import { analyzePhishing } from '../analysis/phishing-engine.js';
 import { analyzePhishingViaWebhook } from '../api/n8n-service.js';
 import { delay } from '../utils/helpers.js';
 
@@ -128,40 +127,45 @@ The scanner will analyze:
     if (webhookResponse.success && webhookResponse.data) {
       progress.style.width = '80%';
       await delay(200);
-      // Merge n8n response with local analysis for rich display
-      const localResult = analyzePhishing(text);
       const n8nData = Array.isArray(webhookResponse.data) ? webhookResponse.data[0] : webhookResponse.data;
+      
+      const urls = n8nData.urls ? n8nData.urls.map(u => typeof u === 'string' ? {full: u} : u) : [];
+      let score = n8nData.score !== undefined ? n8nData.score : (n8nData.phishing_score !== undefined ? n8nData.phishing_score : 0);
+      
       result = {
-        ...localResult,
-        verdict: n8nData.verdict || n8nData.result || localResult.verdict,
-        score: n8nData.score !== undefined ? n8nData.score : (n8nData.phishing_score !== undefined ? n8nData.phishing_score : localResult.score),
-        confidence: n8nData.confidence || localResult.confidence,
-        severity: n8nData.severity || localResult.severity,
+        success: true,
+        parsed: { from: n8nData.from || '', subject: n8nData.subject || '', body: text, urls: urls },
+        domainFindings: n8nData.domainFindings || [],
+        urgencyFindings: n8nData.urgencyFindings || [],
+        linkFindings: n8nData.linkFindings || [],
+        summary: n8nData.summary || { domainIssues: 0, urgencyFlags: 0, linkIssues: 0 },
+        findings: n8nData.findings || [],
+        verdict: n8nData.verdict || n8nData.result || 'UNKNOWN',
+        score: score,
+        confidence: n8nData.confidence || score,
+        severity: n8nData.severity || 'safe',
       };
+      
       if (n8nData.score !== undefined || n8nData.phishing_score !== undefined) {
-        const s = result.score;
-        if (s >= 0.65) { result.verdict = 'PHISHING DETECTED'; result.severity = 'critical'; }
-        else if (s >= 0.35) { result.verdict = 'SUSPICIOUS'; result.severity = 'warning'; }
+        if (score >= 0.65) { result.verdict = 'PHISHING DETECTED'; result.severity = 'critical'; }
+        else if (score >= 0.35) { result.verdict = 'SUSPICIOUS'; result.severity = 'warning'; }
         else { result.verdict = 'SAFE'; result.severity = 'safe'; }
-      }
-      // Merge any additional findings from n8n
-      if (n8nData.findings && Array.isArray(n8nData.findings)) {
-        result.findings = [...result.findings, ...n8nData.findings.map(f => ({
-          type: f.type || 'n8n_finding',
-          severity: f.severity || 'warning',
-          details: f.details || f.description || f.message || JSON.stringify(f),
-        }))];
       }
     }
 
-    // Fallback to local analysis
+    // If webhook failed
     if (!result || !result.success) {
-      source = 'local';
-      for (let i = 40; i <= 80; i += 10) {
-        await delay(100);
-        progress.style.width = i + '%';
-      }
-      result = analyzePhishing(text);
+      progress.style.width = '100%';
+      await delay(200);
+      analyzeBtn.disabled = false;
+      analyzeBtn.innerHTML = '🔍 Scan Email';
+      resultsContainer.innerHTML = `
+        <div class="card">
+          <div style="color: var(--accent-orange); display: flex; align-items: center; gap: var(--space-2);">
+            <span>⚠️</span> Analysis requires the n8n cloud pipeline. The webhook did not respond or returned invalid data.
+          </div>
+        </div>`;
+      return;
     }
 
     progress.style.width = '100%';
