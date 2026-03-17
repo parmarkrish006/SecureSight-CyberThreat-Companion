@@ -749,41 +749,51 @@ function humanizeCompression(value) {
 /**
  * Flatten the n8n response to find NLAI fields anywhere in the object tree.
  * The response might be: { the_what: ... } or { body: { the_what: ... } }
- * or { data: { the_what: ... } } etc.
+ * or { data: { the_what: ... } } etc. Also handles stringified JSON nested deep.
  */
 function flattenNlaiResponse(obj) {
-  if (!obj || typeof obj !== 'object') return {};
-
-  // If top-level has the_what, it's already flat
-  if (obj.the_what || obj.the_evidence || obj.the_confidence) return obj;
-
-  // Search one level deep in each value
-  for (const key of Object.keys(obj)) {
-    const val = obj[key];
-    if (val && typeof val === 'object' && !Array.isArray(val)) {
-      if (val.the_what || val.the_evidence || val.the_confidence) {
-        return { ...val }; // Found NLAI fields nested under this key
-      }
+  if (!obj) return {};
+  
+  if (typeof obj === 'string') {
+    try {
+      obj = JSON.parse(obj);
+    } catch (e) {
+      return {};
     }
   }
 
-  // Search two levels deep
-  for (const key of Object.keys(obj)) {
-    const val = obj[key];
-    if (val && typeof val === 'object' && !Array.isArray(val)) {
-      for (const key2 of Object.keys(val)) {
-        const val2 = val[key2];
-        if (val2 && typeof val2 === 'object' && !Array.isArray(val2)) {
-          if (val2.the_what || val2.the_evidence || val2.the_confidence) {
-            return { ...val2 };
-          }
+  if (typeof obj !== 'object') return {};
+
+  let found = null;
+  
+  function search(node) {
+    if (found) return;
+    if (!node || typeof node !== 'object') return;
+    
+    // Check if current node has any of the expected keys
+    if (node.the_what || node.the_evidence || node.the_confidence || node.verdict || node.classification || node.visual_assets) {
+      found = { ...node };
+      return;
+    }
+    
+    // Otherwise, iterate over keys
+    for (const key of Object.keys(node)) {
+      const val = node[key];
+      if (typeof val === 'string' && (val.trim().startsWith('{') || val.trim().startsWith('['))) {
+        try {
+          const parsed = JSON.parse(val);
+          search(parsed);
+        } catch(e) {
+          // Ignore parse error
         }
+      } else if (val && typeof val === 'object') {
+        search(val);
       }
     }
   }
-
-  // Couldn't find NLAI fields, return original
-  return obj;
+  
+  search(obj);
+  return found || obj;
 }
 
 /**
