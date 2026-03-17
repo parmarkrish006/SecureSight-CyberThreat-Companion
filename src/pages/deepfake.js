@@ -164,28 +164,42 @@ export function renderDeepfake(container) {
         const n8nData = flattenNlaiResponse(rawData);
         console.log('[SecureSight] Flattened NLAI data:', JSON.stringify(n8nData, null, 2));
 
-        // Parse the NLAI response format
-        const classification = n8nData.the_what || n8nData.verdict || n8nData.classification || '';
-        const evidence = n8nData.the_evidence || n8nData.evidence || '';
-        const confidenceText = n8nData.the_confidence || n8nData.confidence || '';
-        const action = n8nData.the_action || n8nData.action || '';
-        const visualAssets = n8nData.visual_assets || {};
+        // Parse the NLAI response format (handles both flat and nested 'breakdown' objects)
+        const classification = n8nData.the_what || (n8nData.breakdown && n8nData.breakdown.the_what) || n8nData.verdict || n8nData.classification || '';
+        const evidence = n8nData.the_evidence || (n8nData.breakdown && n8nData.breakdown.the_evidence) || n8nData.evidence || '';
+        const confidenceText = n8nData.the_confidence || (n8nData.breakdown && n8nData.breakdown.the_confidence) || n8nData.confidence || '';
+        const action = n8nData.the_action || (n8nData.breakdown && n8nData.breakdown.the_action) || n8nData.action || '';
+        const visualAssets = n8nData.visual_assets || (n8nData.breakdown && n8nData.breakdown.visual_assets) || {};
 
-        // Extract confidence score from text like "77.7% NLAI Confidence"
-        const confMatch = confidenceText.match(/([\d.]+)%/);
-        const confidenceScore = confMatch ? parseFloat(confMatch[1]) / 100 : 0.5;
+        // Extract confidence score (prioritize new `risk_score` field)
+        let confidenceScore = 0.5;
+        if (typeof n8nData.risk_score === 'number') {
+          confidenceScore = n8nData.risk_score / 100;
+        } else {
+          const confMatch = confidenceText.match(/([\d.]+)%/);
+          if (confMatch) confidenceScore = parseFloat(confMatch[1]) / 100;
+        }
 
         // Parse frame statistics from evidence text
         const frameStats = parseFrameStats(evidence);
 
         // Determine verdict and severity
-        const isFake = classification.toLowerCase().includes('deepfake') ||
-                        classification.toLowerCase().includes('fake') ||
-                        evidence.toLowerCase().includes('verdict: fake');
-        let verdict, severity;
-        if (isFake && confidenceScore > 0.6) { verdict = 'DEEPFAKE DETECTED'; severity = 'critical'; }
-        else if (isFake || confidenceScore > 0.35) { verdict = 'SUSPICIOUS'; severity = 'warning'; }
-        else { verdict = 'AUTHENTIC'; severity = 'safe'; }
+        let verdict = n8nData.status || '';
+        let severity = 'safe';
+        
+        if (!verdict) {
+          const isFake = classification.toLowerCase().includes('deepfake') ||
+                          classification.toLowerCase().includes('fake') ||
+                          evidence.toLowerCase().includes('verdict: fake');
+          if (isFake && confidenceScore > 0.6) { verdict = 'DEEPFAKE DETECTED'; severity = 'critical'; }
+          else if (isFake || confidenceScore > 0.35) { verdict = 'SUSPICIOUS'; severity = 'warning'; }
+          else { verdict = 'AUTHENTIC'; severity = 'safe'; }
+        } else {
+          if (verdict.toLowerCase().includes('high') || verdict.toLowerCase().includes('detected')) severity = 'critical';
+          else if (verdict.toLowerCase().includes('medium') || verdict.toLowerCase().includes('suspicious')) severity = 'warning';
+          else severity = 'safe';
+          verdict = verdict.toUpperCase();
+        }
 
         result = {
           verdict: verdict,
