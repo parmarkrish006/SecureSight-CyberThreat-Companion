@@ -122,39 +122,48 @@ The scanner will analyze:
     // Try n8n webhook first
     let result = null;
     let source = 'n8n';
-    const webhookResponse = await analyzePhishingViaWebhook(text);
+    let errorMessage = 'Analysis requires the n8n cloud pipeline. The webhook did not respond or returned invalid data.';
+    
+    try {
+      const webhookResponse = await analyzePhishingViaWebhook(text);
 
-    if (webhookResponse.success && webhookResponse.data) {
-      progress.style.width = '80%';
-      await delay(200);
-      const n8nData = Array.isArray(webhookResponse.data) ? webhookResponse.data[0] : webhookResponse.data;
-      
-      const urls = n8nData.urls ? n8nData.urls.map(u => typeof u === 'string' ? {full: u} : u) : [];
-      let score = n8nData.score !== undefined ? n8nData.score : (n8nData.phishing_score !== undefined ? n8nData.phishing_score : 0);
-      
-      result = {
-        success: true,
-        parsed: { from: n8nData.from || '', subject: n8nData.subject || '', body: text, urls: urls },
-        domainFindings: n8nData.domainFindings || [],
-        urgencyFindings: n8nData.urgencyFindings || [],
-        linkFindings: n8nData.linkFindings || [],
-        summary: n8nData.summary || { domainIssues: 0, urgencyFlags: 0, linkIssues: 0 },
-        findings: n8nData.findings || [],
-        verdict: n8nData.verdict || n8nData.result || 'UNKNOWN',
-        score: score,
-        confidence: n8nData.confidence || score,
-        severity: n8nData.severity || 'safe',
-      };
-      
-      if (n8nData.score !== undefined || n8nData.phishing_score !== undefined) {
-        if (score >= 0.65) { result.verdict = 'PHISHING DETECTED'; result.severity = 'critical'; }
-        else if (score >= 0.35) { result.verdict = 'SUSPICIOUS'; result.severity = 'warning'; }
-        else { result.verdict = 'SAFE'; result.severity = 'safe'; }
+      if (webhookResponse.success && webhookResponse.data) {
+        progress.style.width = '80%';
+        await delay(200);
+        const n8nData = Array.isArray(webhookResponse.data) ? webhookResponse.data[0] : webhookResponse.data;
+        
+        const urls = n8nData.urls ? n8nData.urls.map(u => typeof u === 'string' ? {full: u} : u) : [];
+        let score = n8nData.score !== undefined ? n8nData.score : (n8nData.phishing_score !== undefined ? n8nData.phishing_score : 0);
+        
+        result = {
+          success: true,
+          parsed: { from: n8nData.from || '', subject: n8nData.subject || '', body: text, urls: urls },
+          domainFindings: n8nData.domainFindings || [],
+          urgencyFindings: n8nData.urgencyFindings || [],
+          linkFindings: n8nData.linkFindings || [],
+          summary: n8nData.summary || { domainIssues: 0, urgencyFlags: 0, linkIssues: 0 },
+          findings: n8nData.findings || [],
+          verdict: n8nData.verdict || n8nData.result || 'UNKNOWN',
+          score: score,
+          confidence: n8nData.confidence || score,
+          severity: n8nData.severity || 'safe',
+        };
+        
+        if (n8nData.score !== undefined || n8nData.phishing_score !== undefined) {
+          if (score >= 0.65) { result.verdict = 'PHISHING DETECTED'; result.severity = 'critical'; }
+          else if (score >= 0.35) { result.verdict = 'SUSPICIOUS'; result.severity = 'warning'; }
+          else { result.verdict = 'SAFE'; result.severity = 'safe'; }
+        }
+      } else if (!webhookResponse.success) {
+        errorMessage = webhookResponse.error;
       }
+    } catch (err) {
+      errorMessage = err.message || errorMessage;
     }
 
     // If webhook failed
     if (!result || !result.success) {
+      if (result && result.error) errorMessage = result.error;
       progress.style.width = '100%';
       await delay(200);
       analyzeBtn.disabled = false;
@@ -162,7 +171,7 @@ The scanner will analyze:
       resultsContainer.innerHTML = `
         <div class="card">
           <div style="color: var(--accent-orange); display: flex; align-items: center; gap: var(--space-2);">
-            <span>⚠️</span> Analysis requires the n8n cloud pipeline. The webhook did not respond or returned invalid data.
+            <span>⚠️</span> ${errorMessage}
           </div>
         </div>`;
       return;

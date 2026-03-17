@@ -135,18 +135,27 @@ Example:
     // Try n8n webhook first
     let result = null;
     let source = 'n8n';
-    const webhookResponse = await analyzeAnomalyViaWebhook(text);
+    let errorMessage = 'Analysis requires the n8n cloud pipeline. The webhook did not respond or returned invalid data.';
+    
+    try {
+      const webhookResponse = await analyzeAnomalyViaWebhook(text);
 
-    if (webhookResponse.success && webhookResponse.data) {
-      progress.style.width = '90%';
-      await delay(200);
-      // Use n8n response — normalize it to our result format if needed
-      const data = webhookResponse.data;
-      result = normalizeN8nAnomalyResult(data, text);
+      if (webhookResponse.success && webhookResponse.data) {
+        progress.style.width = '90%';
+        await delay(200);
+        // Use n8n response — normalize it to our result format if needed
+        const data = webhookResponse.data;
+        result = normalizeN8nAnomalyResult(data, text);
+      } else if (!webhookResponse.success) {
+        errorMessage = webhookResponse.error;
+      }
+    } catch (err) {
+      errorMessage = err.message || errorMessage;
     }
 
     // If webhook failed
     if (!result || !result.success) {
+      if (result && result.error) errorMessage = result.error;
       progress.style.width = '100%';
       await delay(200);
       analyzeBtn.disabled = false;
@@ -154,7 +163,7 @@ Example:
       resultsContainer.innerHTML = `
         <div class="card">
           <div style="color: var(--accent-orange); display: flex; align-items: center; gap: var(--space-2);">
-            <span>⚠️</span> Analysis requires the n8n cloud pipeline. The webhook did not respond or returned invalid data.
+            <span>⚠️</span> ${errorMessage}
           </div>
         </div>`;
       return;

@@ -145,9 +145,10 @@ export function renderDeepfake(container) {
       progress.style.width = i + '%';
     }
 
-    // Try n8n webhook first
     let result = null;
     let source = 'n8n';
+    let errorMessage = 'Analysis requires the n8n cloud pipeline. The webhook did not respond or returned invalid data. Please ensure your n8n workflow is active.';
+    
     try {
       const webhookResponse = await analyzeDeepfakeViaWebhook(selectedDataUrl, selectedFile.name, selectedFile.type);
 
@@ -207,9 +208,12 @@ export function renderDeepfake(container) {
           details: {},
         };
 
+      } else if (!webhookResponse.success) {
+        errorMessage = webhookResponse.error;
       }
     } catch (err) {
       console.error('[Deepfake] n8n webhook error:', err);
+      errorMessage = err.message || errorMessage;
     }
 
     // If webhook failed
@@ -221,7 +225,7 @@ export function renderDeepfake(container) {
       resultsContainer.innerHTML = `
         <div class="card">
           <div style="color: var(--accent-orange); display: flex; align-items: center; gap: var(--space-2);">
-            <span>⚠️</span> Analysis requires the n8n cloud pipeline. The webhook did not respond or returned invalid data. Please ensure your n8n workflow is active.
+            <span>⚠️</span> ${errorMessage}
           </div>
         </div>`;
       return;

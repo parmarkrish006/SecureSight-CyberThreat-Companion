@@ -41,8 +41,11 @@ export async function analyzeViaWebhook(threatType, payload) {
       throw new Error(`Webhook returned ${response.status}: ${response.statusText}`);
     }
 
-    // Try to parse as JSON, fall back to text
     const text = await response.text();
+    if (!text || !text.trim()) {
+      throw new Error('Webhook returned an empty response. Please configure your n8n Webhook node to "Respond: When Last Node Finishes" or use a "Respond to Webhook" node.');
+    }
+
     try {
       const data = JSON.parse(text);
       return { success: true, data };
@@ -91,6 +94,10 @@ export async function analyzeDeepfakeViaWebhook(fileDataUrl, fileName, fileType)
     const text = await res.text();
     console.log('[n8n] Deepfake raw response text (first 500 chars):', text.substring(0, 500));
 
+    if (!text || !text.trim()) {
+      throw new Error('Webhook returned an empty response. Please configure your n8n Webhook node to "Respond: When Last Node Finishes".');
+    }
+
     try {
       const data = JSON.parse(text);
       console.log('[n8n] Deepfake parsed JSON:', JSON.stringify(data, null, 2).substring(0, 1000));
@@ -103,7 +110,7 @@ export async function analyzeDeepfakeViaWebhook(fileDataUrl, fileName, fileType)
     console.error('[n8n] Deepfake webhook error:', error);
     return {
       success: false,
-      error: error.message || 'Failed to send media to n8n webhook',
+      error: error.message || 'Failed to connect to n8n webhook',
     };
   }
 }
